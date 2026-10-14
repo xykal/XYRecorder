@@ -33,6 +33,14 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew || true
 
+      - name: Install CMake
+        run: |
+          echo "Installing CMake via sdkmanager..."
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.22.1" 2>&1 || true
+          # Also try alternative paths
+          yes | $ANDROID_HOME/cmdline-tools/bin/sdkmanager --install "cmake;3.22.1" 2>&1 || true
+          ls $ANDROID_HOME/cmake/ 2>/dev/null || echo "CMake not found in SDK"
+
       - name: Decode Keystore
         if: github.event_name != 'pull_request'
         env:

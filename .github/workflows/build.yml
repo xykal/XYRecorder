@@ -8,6 +8,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -87,59 +90,60 @@ jobs:
           echo "Size: $(du -h "$APK_PATH" | cut -f1)"
           echo ""
           
-          # Use apksigner from Android SDK to verify signature
-          # AGP 8.x includes apksigner in build-tools
-          BUILD_TOOLS=$(find $ANDROID_HOME/build-tools -maxdepth 1 -type d | sort -V | tail -1)
+          # Find apksigner from Android SDK build-tools
+          BUILD_TOOLS=$(find $ANDROID_HOME/build-tools -maxdepth 1 -type d 2>/dev/null | sort -V | tail -1)
           APKSIGNER="$BUILD_TOOLS/apksigner"
           
-          if [ ! -f "$APKSIGNER" ]; then
-            echo "⚠️ apksigner not found, using alternative verification"
-            # Fallback: use jarsigner
-            jarsigner -verify -verbose -certs "$APK_PATH" 2>&1 | tail -20
+          echo "=== APK Signature Verification ==="
+          echo ""
+          
+          if [ -f "$APKSIGNER" ]; then
+            # Full verbose verification
+            "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" 2>&1
+            echo ""
+          fi
+          
+          # Check v1 (JAR signing) - look for META-INF/*.SF in APK
+          echo "=== Signature Scheme Status ==="
+          if unzip -l "$APK_PATH" 2>/dev/null | grep -q "META-INF/.*\.SF"; then
+            echo "✅ v1 Signing (JAR): VERIFIED"
           else
-            echo "=== APK Signature Verification ==="
-            echo ""
+            echo "⚠️ v1 Signing (JAR): Not detected"
+          fi
+          
+          # Check v2/v3/v4 using apksigner
+          if [ -f "$APKSIGNER" ]; then
+            VERIFY_OUTPUT=$("$APKSIGNER" verify --verbose "$APK_PATH" 2>&1)
             
-            # Verify with all schemes
-            "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" 2>&1 || true
-            
-            echo ""
-            echo "=== Signature Scheme Status ==="
-            
-            # Check v1 (JAR signing)
-            if "$APKSIGNER" verify --min-sdk-version 1 "$APK_PATH" 2>/dev/null; then
-              echo "✅ v1 Signing (JAR): VERIFIED"
-            else
-              echo "⚠️ v1 Signing (JAR): Not detected"
+            if echo "$VERIFY_OUTPUT" | grep -q "v1 scheme.*true"; then
+              echo "✅ v1 Signing (JAR): VERIFIED (apksigner)"
             fi
             
-            # Check v2
-            if "$APKSIGNER" verify --v2-signing-enabled true "$APK_PATH" 2>/dev/null; then
+            if echo "$VERIFY_OUTPUT" | grep -q "v2 scheme.*true"; then
               echo "✅ v2 Signing (APK): VERIFIED"
             else
               echo "⚠️ v2 Signing (APK): Not detected"
             fi
             
-            # Check v3
-            if "$APKSIGNER" verify --v3-signing-enabled true "$APK_PATH" 2>/dev/null; then
+            if echo "$VERIFY_OUTPUT" | grep -q "v3 scheme.*true"; then
               echo "✅ v3 Signing (APK): VERIFIED"
             else
               echo "⚠️ v3 Signing (APK): Not detected"
             fi
-            
-            # Check v4 (.idsig file)
-            IDSIG_PATH="${APK_PATH%.apk}.idsig"
-            if [ -f "$IDSIG_PATH" ]; then
-              echo "✅ v4 Signing (VERITY): VERIFIED (idsig file present)"
-              ls -la "$IDSIG_PATH"
-            else
-              echo "ℹ️ v4 Signing (VERITY): No .idsig file (optional for release)"
-            fi
-            
-            echo ""
-            echo "=== Certificate Info ==="
-            "$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1 | grep -E "Using|Signer|SHA" || true
           fi
+          
+          # Check v4 (.idsig file)
+          IDSIG_PATH="${APK_PATH%.apk}.idsig"
+          if [ -f "$IDSIG_PATH" ]; then
+            echo "✅ v4 Signing (VERITY): VERIFIED (.idsig file present)"
+            ls -la "$IDSIG_PATH"
+          else
+            echo "ℹ️ v4 Signing (VERITY): No .idsig file"
+          fi
+          
+          echo ""
+          echo "=== APK Files ==="
+          ls -la app/build/outputs/apk/release/
 
       - name: Upload Debug APK
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
@@ -166,7 +170,6 @@ jobs:
           files: |
             app/build/outputs/apk/release/*-universal.apk
             app/build/outputs/apk/release/*.idsig
-          generate_release_notes: true
           name: XYRecorder ${{ github.ref_name }}
           body: |
             ## 🎬 XYRecorder ${{ github.ref_name }}
@@ -192,7 +195,7 @@ jobs:
             - ✅ **v1** (JAR signing) - Backward compatibility
             - ✅ **v2** (APK Signature Scheme v2) - Faster installation
             - ✅ **v3** (APK Signature Scheme v3) - Key rotation support
-            - ✅ **v4** (VERITY) - Incremental updates via .idsig file
+            - ✅ **v4** (VERITY) - Incremental updates
             
             **Certificate:**
             - Algorithm: SHA256withRSA

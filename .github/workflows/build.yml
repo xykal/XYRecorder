@@ -172,16 +172,16 @@ jobs:
             app/build/outputs/apk/release/*.idsig
           name: XYRecorder ${{ github.ref_name }}
           body: |
-            ## 🎬 XYRecorder ${{ github.ref_name }}
+            ## 🎙️ XYRecorder ${{ github.ref_name }}
             
-            **Professional Android Screen Recorder with Studio-Quality Audio**
+            **Professional Audio Recorder with Studio-Quality Mic Processing**
             
             ### 📱 Features
-            - 📹 720p/1080p/1440p/4K recording @ 30/60 FPS
-            - 🎤 Microphone + System Audio capture
-            - 🎚️ Studio-quality noise reduction chain
-            - 🎨 Beautiful Material 3 dark UI
-            - ⚙️ Full settings customization
+            - 🎤 High-quality 48kHz WAV recording
+            - 🎚️ Studio noise reduction with 4 presets (Light / Medium / Heavy / Studio)
+            - 📊 Real-time audio level meter
+            - 🎨 Beautiful XYVerse dark theme UI
+            - 📁 Built-in recordings browser
             
             ### 📦 Universal APK
             This APK supports all architectures:
@@ -197,26 +197,20 @@ jobs:
             - ✅ **v3** (APK Signature Scheme v3) - Key rotation support
             - ✅ **v4** (VERITY) - Incremental updates
             
-            **Certificate:**
-            - Algorithm: SHA256withRSA
-            - Key Size: 2048-bit RSA
-            - Validity: 27+ years
-            
             ### 📲 Installation
             1. Download the APK below
             2. Enable "Install from unknown sources" in Android settings
             3. Install the APK
-            4. Grant screen recording & microphone permissions
-            5. Start recording! 🎬
+            4. Grant microphone permission
+            5. Start recording! 🎙️
             
-            ### 🎚️ Audio Processing Chain
-            - High-pass filter (Butterworth IIR)
-            - Noise gate with envelope control
-            - Spectral noise suppression
-            - Soft-knee compressor with makeup gain
-            - De-esser for sibilance reduction
-            - Brick-wall limiter
-            - 5 one-tap presets (None/Light/Medium/Heavy/Studio)
+            ### 🎚️ Audio Processing
+            - Native Android NoiseSuppressor
+            - Noise gate (threshold-based)
+            - Dynamic compression
+            - Soft limiting
+            - Makeup gain
+            - 4 presets: Light → Studio quality
             
             **Requirements:** Android 7.0+ (API 24)
           draft: false

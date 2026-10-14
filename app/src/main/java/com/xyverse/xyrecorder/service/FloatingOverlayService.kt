@@ -6,35 +6,40 @@ import android.graphics.*
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.util.Log
 import android.view.*
-import android.widget.*
-import com.xyverse.xyrecorder.R
+import android.widget.FrameLayout
+import android.widget.TextView
 import java.util.*
 
 class FloatingOverlayService : Service() {
+
+    companion object {
+        private const val TAG = "FloatingOverlayService"
+        var instance: FloatingOverlayService? = null
+    }
 
     private var windowManager: WindowManager? = null
     private var floatingView: FrameLayout? = null
     private var params: WindowManager.LayoutParams? = null
 
-    companion object {
-        var instance: FloatingOverlayService? = null
-    }
-
     override fun onCreate() {
         super.onCreate()
         instance = this
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        createFloatingView()
-    }
-
-    private fun createFloatingView() {
+        
         // Check overlay permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Log.e(TAG, "Overlay permission not granted")
             stopSelf()
             return
         }
+        
+        createFloatingView()
+        Log.d(TAG, "FloatingOverlayService created")
+    }
 
+    private fun createFloatingView() {
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -49,7 +54,7 @@ class FloatingOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
+            x = 50
             y = 300
         }
 
@@ -72,10 +77,14 @@ class FloatingOverlayService : Service() {
                     paint.shader = gradient
                     canvas.drawCircle(bubbleSize / 2f, bubbleSize / 2f, bubbleSize / 2f - 4f, paint)
                     
-                    // Draw recording indicator
+                    // Draw white circle in center
                     paint.shader = null
                     paint.color = Color.WHITE
-                    canvas.drawCircle(bubbleSize / 2f, bubbleSize / 2f, 20f, paint)
+                    canvas.drawCircle(bubbleSize / 2f, bubbleSize / 2f, 25f, paint)
+                    
+                    // Draw red dot
+                    paint.color = Color.parseColor("#FF0844")
+                    canvas.drawCircle(bubbleSize / 2f, bubbleSize / 2f, 15f, paint)
                 }
             }
 
@@ -97,7 +106,7 @@ class FloatingOverlayService : Service() {
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = -30
+                topMargin = bubbleSize + 10
             }
             timerText.layoutParams = timerParams
             addView(timerText)
@@ -120,6 +129,7 @@ class FloatingOverlayService : Service() {
 
             // Click to stop
             bubble.setOnClickListener {
+                Log.d(TAG, "Bubble clicked - stopping recording")
                 val stopIntent = Intent(this@FloatingOverlayService, RecordingService::class.java).apply {
                     action = RecordingService.ACTION_STOP
                 }
@@ -153,6 +163,7 @@ class FloatingOverlayService : Service() {
         }
 
         windowManager?.addView(floatingView, params)
+        Log.d(TAG, "Floating view added to window")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -162,6 +173,7 @@ class FloatingOverlayService : Service() {
         instance = null
         if (floatingView != null) {
             windowManager?.removeView(floatingView)
+            Log.d(TAG, "Floating view removed")
         }
     }
 }

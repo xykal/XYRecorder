@@ -31,6 +31,7 @@ set(LAME_SOURCES
     libmp3lame/takehiro.c
     libmp3lame/util.c
     libmp3lame/VbrTag.c
+    libmp3lame/vbrquantize.c
     libmp3lame/version.c
 )
 

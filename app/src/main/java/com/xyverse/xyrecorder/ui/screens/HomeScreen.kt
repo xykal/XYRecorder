@@ -1,5 +1,6 @@
 package com.xyverse.xyrecorder.ui.screens
 
+import android.os.Environment
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -18,172 +19,198 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.xyverse.xyrecorder.data.*
+import com.xyverse.xyrecorder.data.AppSettings
+import com.xyverse.xyrecorder.data.RecordingStatus
 import com.xyverse.xyrecorder.ui.theme.XYVerseColors
-import java.util.concurrent.TimeUnit
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     settings: AppSettings,
     status: RecordingStatus,
-    canStart: Boolean,
+    recordings: List<File>,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
-    onPauseRecording: () -> Unit,
-    onResumeRecording: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenNoiseReduction: () -> Unit,
-    modifier: Modifier = Modifier
+    onToggleNoiseReduction: (Boolean) -> Unit,
+    onUpdateNoisePreset: (String) -> Unit,
+    onRequestPermission: () -> Unit,
+    onClearError: () -> Unit
 ) {
-    Scaffold(
-        modifier = modifier.background(XYVerseColors.BackgroundDark),
-        containerColor = Color.Transparent,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Custom Logo
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(
-                                            XYVerseColors.PrimaryStart,
-                                            XYVerseColors.PrimaryEnd
-                                        )
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Videocam,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Column {
-                            Text(
-                                "XYRecorder",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                color = XYVerseColors.TextPrimary
-                            )
-                            Text(
-                                "Professional Screen Recorder",
-                                fontSize = 11.sp,
-                                color = XYVerseColors.TextMuted
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = XYVerseColors.TextSecondary
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        XYVerseColors.BackgroundDark,
+                        XYVerseColors.BackgroundDark.copy(alpha = 0.95f),
+                        XYVerseColors.BackgroundDark
+                    )
                 )
             )
-        }
-    ) { padding ->
+    ) {
+        // Header
+        HeaderSection()
+        
+        // Main content
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .weight(1f)
+                .padding(horizontal = 20.dp)
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Status Card with Gradient
-            StatusCard(status = status, videoSettings = settings.video)
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Main Recording Button with Animation
-            RecordButton(
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Status card
+            StatusCard(
                 isRecording = status.isRecording,
-                isPaused = status.isPaused,
-                canStart = canStart,
-                onStart = onStartRecording,
-                onStop = onStopRecording,
-                onPause = onPauseRecording,
-                onResume = onResumeRecording
+                micLevel = status.micLevelDb,
+                settings = settings
             )
-
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Audio level meter
+            LevelMeter(
+                levelDb = status.micLevelDb,
+                isRecording = status.isRecording
+            )
+            
             Spacer(modifier = Modifier.weight(1f))
-
-            // Noise Reduction Quick Access
-            NoiseReductionCard(
-                preset = settings.noiseReduction.preset,
-                onClick = onOpenNoiseReduction
+            
+            // Recording button
+            RecordingButton(
+                isRecording = status.isRecording,
+                onStart = onStartRecording,
+                onStop = onStopRecording
             )
-
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            // Noise reduction card
+            NoiseReductionCard(
+                enabled = settings.noiseReduction.enabled,
+                preset = settings.noiseReduction.preset,
+                onToggle = onToggleNoiseReduction,
+                onPresetChange = onUpdateNoisePreset
+            )
+            
             Spacer(modifier = Modifier.height(16.dp))
-
-            // Quick Settings
-            QuickSettingsRow(videoSettings = settings.video)
-
+            
+            // Recordings list
+            RecordingsList(recordings = recordings)
+            
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+    
+    // Error dialog
+    status.error?.let { error ->
+        AlertDialog(
+            onDismissRequest = onClearError,
+            title = { Text("Error") },
+            text = { Text(error) },
+            confirmButton = {
+                Button(onClick = onClearError) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun HeaderSection() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                XYVerseColors.PrimaryStart,
+                                XYVerseColors.PrimaryEnd
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.GraphicEq,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            
+            Column {
+                Text(
+                    "XYRecorder",
+                    color = XYVerseColors.TextPrimary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Studio Audio Processor",
+                    color = XYVerseColors.TextMuted,
+                    fontSize = 13.sp
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun StatusCard(status: RecordingStatus, videoSettings: VideoSettings) {
-    var elevated by remember { mutableStateOf(false) }
-    
-    LaunchedEffect(status.isRecording) {
-        elevated = status.isRecording
-    }
-
+private fun StatusCard(
+    isRecording: Boolean,
+    micLevel: Float,
+    settings: AppSettings
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = XYVerseColors.BackgroundCard
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (elevated) 8.dp else 2.dp
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+        Column(
+            modifier = Modifier.padding(20.dp)
         ) {
-            StatusItem(
-                icon = Icons.Default.HighQuality,
-                label = "Quality",
-                value = videoSettings.resolution.label,
-                color = XYVerseColors.PrimaryStart
-            )
-            StatusItem(
-                icon = Icons.Default.Speed,
-                label = "FPS",
-                value = "${videoSettings.fps}",
-                color = XYVerseColors.ElectricBlue
-            )
-            StatusItem(
-                icon = Icons.Default.Timer,
-                label = "Duration",
-                value = formatDuration(status.durationMs),
-                color = if (status.isRecording) XYVerseColors.RecordingRed else XYVerseColors.Success
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                StatusItem(
+                    icon = Icons.Default.Mic,
+                    label = "Status",
+                    value = if (isRecording) "Recording" else "Ready",
+                    color = if (isRecording) XYVerseColors.RecordingRed else XYVerseColors.Success
+                )
+                
+                StatusItem(
+                    icon = Icons.Default.Waves,
+                    label = "Noise Reduction",
+                    value = if (settings.noiseReduction.enabled) "ON" else "OFF",
+                    color = if (settings.noiseReduction.enabled) XYVerseColors.PrimaryStart else XYVerseColors.TextMuted
+                )
+                
+                StatusItem(
+                    icon = Icons.Default.FormatAudioDescription,
+                    label = "Format",
+                    value = "WAV",
+                    color = XYVerseColors.ElectricBlue
+                )
+            }
         }
     }
 }
@@ -196,12 +223,11 @@ private fun StatusItem(
     color: Color
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(40.dp)
                 .clip(CircleShape)
                 .background(color.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
@@ -210,14 +236,15 @@ private fun StatusItem(
                 icon,
                 contentDescription = null,
                 tint = color,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             value,
-            color = XYVerseColors.TextPrimary,
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp
+            color = color,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
         )
         Text(
             label,
@@ -228,51 +255,108 @@ private fun StatusItem(
 }
 
 @Composable
-private fun RecordButton(
+private fun LevelMeter(
+    levelDb: Float,
+    isRecording: Boolean
+) {
+    // Convert dB to 0-100 scale
+    val level = ((levelDb + 60) / 60 * 100).coerceIn(0f, 100f)
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = XYVerseColors.BackgroundCard
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Audio Level",
+                    color = XYVerseColors.TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${String.format("%.1f", levelDb)} dB",
+                    color = XYVerseColors.TextMuted,
+                    fontSize = 12.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Level bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(XYVerseColors.BackgroundElevated)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(level / 100f)
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    XYVerseColors.Success,
+                                    XYVerseColors.Warning,
+                                    XYVerseColors.RecordingRed
+                                )
+                            )
+                        )
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Scale markers
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("-60", color = XYVerseColors.TextMuted, fontSize = 10.sp)
+                Text("-30", color = XYVerseColors.TextMuted, fontSize = 10.sp)
+                Text("0", color = XYVerseColors.TextMuted, fontSize = 10.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordingButton(
     isRecording: Boolean,
-    isPaused: Boolean,
-    canStart: Boolean,
     onStart: () -> Unit,
-    onStop: () -> Unit,
-    onPause: () -> Unit,
-    onResume: () -> Unit
+    onStop: () -> Unit
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (isRecording && !isPaused) 1.1f else 1f,
+        targetValue = if (isRecording) 1.1f else 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = EaseInOutSine),
+            animation = tween(800, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "scale"
     )
-
-    if (isRecording) {
-        // Recording controls
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(32.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Pause/Resume button
-            FloatingActionButton(
-                onClick = if (isPaused) onResume else onPause,
-                modifier = Modifier.size(64.dp),
-                shape = CircleShape,
-                containerColor = XYVerseColors.BackgroundElevated,
-                contentColor = XYVerseColors.TextPrimary
-            ) {
-                Icon(
-                    if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                    contentDescription = if (isPaused) "Resume" else "Pause",
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
-            // Stop button with glow effect
+    
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isRecording) {
+            // Stop button
             Box(
                 modifier = Modifier
-                    .size(96.dp)
+                    .size(120.dp)
                     .scale(scale)
                     .clip(CircleShape)
                     .background(
@@ -287,188 +371,229 @@ private fun RecordButton(
             ) {
                 IconButton(
                     onClick = onStop,
-                    modifier = Modifier.size(96.dp)
+                    modifier = Modifier.size(120.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White)
+                    Icon(
+                        Icons.Default.Stop,
+                        contentDescription = "Stop Recording",
+                        tint = Color.White,
+                        modifier = Modifier.size(48.dp)
                     )
                 }
             }
-        }
-    } else {
-        // Start button with gradient
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .scale(if (canStart) 1f else 0.8f)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = if (canStart) {
-                            listOf(XYVerseColors.PrimaryStart, XYVerseColors.PrimaryEnd)
-                        } else {
-                            listOf(
-                                XYVerseColors.BackgroundElevated,
-                                XYVerseColors.BackgroundElevated
+        } else {
+            // Start button
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                XYVerseColors.PrimaryStart,
+                                XYVerseColors.PrimaryEnd
                             )
-                        }
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            IconButton(
-                onClick = onStart,
-                enabled = canStart,
-                modifier = Modifier.size(120.dp)
+                        )
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
-                )
+                IconButton(
+                    onClick = onStart,
+                    modifier = Modifier.size(140.dp)
+                ) {
+                    Icon(
+                        Icons.Default.FiberManualRecord,
+                        contentDescription = "Start Recording",
+                        tint = Color.White,
+                        modifier = Modifier.size(56.dp)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun NoiseReductionCard(preset: NoiseReductionPreset, onClick: () -> Unit) {
-    val emoji = when (preset) {
-        NoiseReductionPreset.NONE -> "🔇"
-        NoiseReductionPreset.LIGHT -> "🌤️"
-        NoiseReductionPreset.MEDIUM -> "☀️"
-        NoiseReductionPreset.HEAVY -> "🔥"
-        NoiseReductionPreset.STUDIO -> "🎙️"
-        NoiseReductionPreset.CUSTOM -> "⚙️"
-    }
-
+private fun NoiseReductionCard(
+    enabled: Boolean,
+    preset: String,
+    onToggle: (Boolean) -> Unit,
+    onPresetChange: (String) -> Unit
+) {
     Card(
-        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = XYVerseColors.BackgroundCard
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(16.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    XYVerseColors.NeonPurple,
-                                    XYVerseColors.ElectricBlue
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(emoji, fontSize = 28.sp)
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        XYVerseColors.NeonPurple,
+                                        XYVerseColors.ElectricBlue
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    
+                    Column {
+                        Text(
+                            "Noise Reduction",
+                            color = XYVerseColors.TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Studio-quality audio processing",
+                            color = XYVerseColors.TextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
-                Column {
-                    Text(
-                        "Noise Reduction",
-                        color = XYVerseColors.TextPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp
+                
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = XYVerseColors.PrimaryStart,
+                        checkedTrackColor = XYVerseColors.PrimaryStart.copy(alpha = 0.3f)
                     )
-                    Text(
-                        "Preset: ${preset.label}",
-                        color = XYVerseColors.TextMuted,
-                        fontSize = 13.sp
-                    )
+                )
+            }
+            
+            if (enabled) {
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Preset chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("light", "medium", "heavy", "studio").forEach { presetName ->
+                        val emoji = when (presetName) {
+                            "light" -> "🌤️"
+                            "medium" -> "☀️"
+                            "heavy" -> "🔥"
+                            "studio" -> "🎙️"
+                            else -> ""
+                        }
+                        
+                        FilterChip(
+                            selected = preset == presetName,
+                            onClick = { onPresetChange(presetName) },
+                            label = {
+                                Text(
+                                    "$emoji ${presetName.replaceFirstChar { it.uppercase() }}",
+                                    fontSize = 12.sp
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = XYVerseColors.PrimaryStart.copy(alpha = 0.2f),
+                                selectedLabelColor = XYVerseColors.PrimaryStart
+                            )
+                        )
+                    }
                 }
             }
-            Icon(
-                Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = XYVerseColors.TextMuted,
-                modifier = Modifier.size(24.dp)
-            )
         }
     }
 }
 
 @Composable
-private fun QuickSettingsRow(videoSettings: VideoSettings) {
-    Row(
+private fun RecordingsList(recordings: List<File>) {
+    if (recordings.isEmpty()) return
+    
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = XYVerseColors.BackgroundCard
+        )
     ) {
-        QuickChip(
-            label = videoSettings.codec.label,
-            icon = Icons.Default.Memory,
-            color = XYVerseColors.NeonPurple,
-            modifier = Modifier.weight(1f)
-        )
-        QuickChip(
-            label = "${videoSettings.bitrate / 1_000_000} Mbps",
-            icon = Icons.Default.DataUsage,
-            color = XYVerseColors.ElectricBlue,
-            modifier = Modifier.weight(1f)
-        )
-        QuickChip(
-            label = videoSettings.quality.label,
-            icon = Icons.Default.Star,
-            color = XYVerseColors.SunsetOrange,
-            modifier = Modifier.weight(1f)
-        )
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                "Recent Recordings",
+                color = XYVerseColors.TextPrimary,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            recordings.take(3).forEach { file ->
+                RecordingItem(file = file)
+            }
+        }
     }
 }
 
 @Composable
-private fun QuickChip(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.1f)
+private fun RecordingItem(file: File) {
+    val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()) }
+    val sizeMb = file.length() / (1024.0 * 1024.0)
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(XYVerseColors.ElectricBlue.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
         ) {
             Icon(
-                icon,
+                Icons.Default.AudioFile,
                 contentDescription = null,
-                tint = color,
+                tint = XYVerseColors.ElectricBlue,
                 modifier = Modifier.size(18.dp)
             )
-            Spacer(modifier = Modifier.width(8.dp))
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                label,
-                color = color,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp
+                file.nameWithoutExtension,
+                color = XYVerseColors.TextPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                "${dateFormat.format(Date(file.lastModified()))} • ${String.format("%.1f", sizeMb)} MB",
+                color = XYVerseColors.TextMuted,
+                fontSize = 11.sp
             )
         }
     }
-}
-
-fun formatDuration(ms: Long): String {
-    val hours = TimeUnit.MILLISECONDS.toHours(ms)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(ms) % 60
-    val seconds = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
-    return String.format("%02d:%02d:%02d", hours, minutes, seconds)
 }

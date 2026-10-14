@@ -200,7 +200,7 @@ private fun ProcessingChainSection(
     // Noise suppression
     ExpandableProcessingCard(
         title = "Noise Suppression",
-        icon = Icons.Default.Zap,
+        icon = Icons.Default.Bolt,
         description = "AI-based noise reduction",
         enabled = settings.noiseSuppressionEnabled,
         onToggle = { onUpdate { copy(noiseSuppressionEnabled = it) } }

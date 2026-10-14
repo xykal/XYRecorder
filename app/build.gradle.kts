@@ -23,7 +23,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // Release signing loaded from env/gradle properties
             storeFile = file(System.getenv("KEYSTORE_FILE") ?: "release.keystore")
             storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias = System.getenv("KEY_ALIAS") ?: "xyrecorder"

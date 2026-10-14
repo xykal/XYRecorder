@@ -24,8 +24,11 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: chmod +x gradlew || true
 
       - name: Decode Keystore
         if: github.event_name != 'pull_request'
@@ -38,7 +41,7 @@ jobs:
 
       - name: Build Debug APK
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Build Release APK
         if: startsWith(github.ref, 'refs/tags/')
@@ -72,17 +75,5 @@ jobs:
           files: app/build/outputs/apk/release/*.apk
           generate_release_notes: true
           name: XYRecorder ${{ github.ref_name }}
-          body: |
-            ## XYRecorder ${{ github.ref_name }}
-
-            ### 📱 Android Screen Recorder
-            - 720p/1080p/1440p/4K recording @ 30/60 FPS
-            - 🎤 Microphone + Internal Audio capture
-            - 🎚️ Studio-quality noise reduction
-            - 🎨 Beautiful Material 3 dark UI
-
-            ### Install
-            Download the `.apk` file below and install on your Android device.
-            Make sure to enable "Install from unknown sources" in your device settings.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

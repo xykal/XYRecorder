@@ -47,13 +47,15 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "📱 Screen capture result: ${result.resultCode}")
         
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            Log.d(TAG, "✅ Permission granted, starting recording service...")
+            Log.d(TAG, "✅ Permission granted, storing data and starting service...")
             
-            // Start recording service directly
+            // Store recording data in static storage FIRST
+            RecordingService.setRecordingData(result.resultCode, result.data)
+            Log.d(TAG, "📦 Recording data stored")
+            
+            // Then start recording service
             val serviceIntent = Intent(this, RecordingService::class.java).apply {
                 action = RecordingService.ACTION_START
-                putExtra(RecordingService.EXTRA_RESULT_CODE, result.resultCode)
-                putExtra(RecordingService.EXTRA_RESULT_DATA, result.data)
             }
             
             try {

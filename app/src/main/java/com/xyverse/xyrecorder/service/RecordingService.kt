@@ -33,8 +33,15 @@ class RecordingService : Service() {
         const val ACTION_PAUSE = "com.xyverse.xyrecorder.ACTION_PAUSE"
         const val ACTION_RESUME = "com.xyverse.xyrecorder.ACTION_RESUME"
 
-        const val EXTRA_RESULT_CODE = "resultCode"
-        const val EXTRA_RESULT_DATA = "resultData"
+        // Static storage for MediaProjection data
+        private var pendingResultCode: Int = -1
+        private var pendingData: Intent? = null
+        
+        fun setRecordingData(resultCode: Int, data: Intent?) {
+            Log.d(TAG, "📦 Storing recording data: resultCode=$resultCode, data=${data != null}")
+            pendingResultCode = resultCode
+            pendingData = data
+        }
 
         var instance: RecordingService? = null
             private set
@@ -61,20 +68,12 @@ class RecordingService : Service() {
         
         when (intent?.action) {
             ACTION_START -> {
-                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
-                val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
+                Log.d(TAG, "🎬 Starting recording with stored data...")
+                
+                if (pendingResultCode != -1 && pendingData != null) {
+                    startRecordingInternal(pendingResultCode, pendingData!!)
                 } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(EXTRA_RESULT_DATA)
-                }
-
-                Log.d(TAG, "🎬 Starting recording: resultCode=$resultCode, data=${data != null}")
-
-                if (resultCode != -1 && data != null) {
-                    startRecordingInternal(resultCode, data)
-                } else {
-                    Log.e(TAG, "❌ Invalid resultCode or data")
+                    Log.e(TAG, "❌ No recording data available!")
                     stopSelf()
                 }
             }
@@ -153,6 +152,10 @@ class RecordingService : Service() {
             startTime = System.currentTimeMillis()
             
             Log.d(TAG, "✅ Recording started successfully!")
+
+            // Clear pending data
+            pendingResultCode = -1
+            pendingData = null
 
             // Step 7: Start floating overlay
             Log.d(TAG, "🫧 Starting floating overlay...")

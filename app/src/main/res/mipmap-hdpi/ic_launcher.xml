@@ -1,13 +1,21 @@
-<?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape android:shape="oval">
-            <solid android:color="#FF5B1FFF"/>
-            <size android:width="48dp" android:height="48dp"/>
-        </shape>
-    </item>
-    <item android:drawable="@drawable/ic_launcher_foreground"
-          android:gravity="center"
-          android:width="32dp"
-          android:height="32dp"/>
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    
+    <!-- Background circle with gradient colors -->
+    <path
+        android:pathData="M24,24m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0"
+        android:fillColor="#6C3FFF"/>
+    
+    <!-- Camera/Recording icon -->
+    <path
+        android:pathData="M16,20L16,28C16,29.1 16.9,30 18,30L30,30C31.1,30 32,29.1 32,28L32,20C32,18.9 31.1,18 30,18L18,18C16.9,18 16,18.9 16,20ZM19,22L29,22L29,26L19,26L19,22Z"
+        android:fillColor="#FFFFFF"/>
+    
+    <!-- Recording dot -->
+    <path
+        android:pathData="M24,24m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"
+        android:fillColor="#FF0844"/>
+</vector>

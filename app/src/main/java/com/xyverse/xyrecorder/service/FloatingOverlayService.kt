@@ -2,203 +2,165 @@ package com.xyverse.xyrecorder.service
 
 import android.app.Service
 import android.content.Intent
-import android.graphics.PixelFormat
+import android.graphics.*
 import android.os.Build
 import android.os.IBinder
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.WindowManager
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.compose.ui.graphics.Color
-import androidx.core.content.ContextCompat
+import android.view.*
+import android.widget.*
 import com.xyverse.xyrecorder.R
-import com.xyverse.xyrecorder.recorder.ScreenRecorder
+import java.util.*
 
-/**
- * Floating overlay bubble service - like XRecorder.
- * Shows a floating control bubble that stays on screen even when app is backgrounded.
- */
 class FloatingOverlayService : Service() {
 
     private var windowManager: WindowManager? = null
-    private var bubbleView: FrameLayout? = null
-    private var expandedView: LinearLayout? = null
-    private var isExpanded = false
+    private var floatingView: FrameLayout? = null
+    private var params: WindowManager.LayoutParams? = null
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    companion object {
+        var instance: FloatingOverlayService? = null
+    }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        createBubble()
-        createExpandedView()
+        createFloatingView()
     }
 
-    private fun createBubble() {
-        val params = WindowManager.LayoutParams(
+    private fun createFloatingView() {
+        // Check overlay permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            stopSelf()
+            return
+        }
+
+        params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
+                @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 0
-            y = 200
+            y = 300
         }
 
-        bubbleView = FrameLayout(this).apply {
+        floatingView = FrameLayout(this).apply {
             layoutParams = params
             
-            // Bubble button
-            val bubbleButton = ImageView(this@FloatingOverlayService).apply {
-                setImageResource(R.drawable.ic_recording)
-                setColorFilter(android.graphics.Color.WHITE)
-                setBackgroundResource(R.drawable.bubble_background)
-                setPadding(16, 16, 16, 16)
-                
-                setOnClickListener {
-                    toggleExpanded()
-                }
-                
-                var initialX = 0
-                var initialY = 0
-                var initialTouchX = 0f
-                var initialTouchY = 0f
-                
-                setOnTouchListener { _, event ->
-                    when (event.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            initialX = params.x
-                            initialY = params.y
-                            initialTouchX = event.rawX
-                            initialTouchY = event.rawY
-                            true
-                        }
-                        MotionEvent.ACTION_MOVE -> {
-                            params.x = initialX + (event.rawX - initialTouchX).toInt()
-                            params.y = initialY + (event.rawY - initialTouchY).toInt()
-                            windowManager?.updateViewLayout(bubbleView, params)
-                            true
-                        }
-                        else -> false
-                    }
+            // Create circular bubble with gradient
+            val bubbleSize = 140
+            val bubble = object : View(this@FloatingOverlayService) {
+                private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+                private val gradient = RadialGradient(
+                    bubbleSize / 2f, bubbleSize / 2f, bubbleSize / 2f,
+                    Color.parseColor("#FF6C3FFF"),
+                    Color.parseColor("#FF00D4AA"),
+                    Shader.TileMode.CLAMP
+                )
+
+                override fun onDraw(canvas: Canvas) {
+                    super.onDraw(canvas)
+                    paint.shader = gradient
+                    canvas.drawCircle(bubbleSize / 2f, bubbleSize / 2f, bubbleSize / 2f - 4f, paint)
+                    
+                    // Draw recording indicator
+                    paint.shader = null
+                    paint.color = Color.WHITE
+                    canvas.drawCircle(bubbleSize / 2f, bubbleSize / 2f, 20f, paint)
                 }
             }
-            
-            addView(bubbleButton)
-        }
 
-        windowManager?.addView(bubbleView, params)
-    }
+            bubble.layoutParams = FrameLayout.LayoutParams(bubbleSize, bubbleSize)
+            addView(bubble)
 
-    private fun createExpandedView() {
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.CENTER
-            x = 0
-            y = 0
-        }
-
-        expandedView = LinearLayout(this).apply {
-            layoutParams = params
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            setBackgroundResource(R.drawable.expanded_background)
-            visibility = android.view.View.GONE
-
-            // Title
-            addView(TextView(this@FloatingOverlayService).apply {
-                text = "XYRecorder"
-                setTextColor(android.graphics.Color.WHITE)
-                textSize = 16f
-                gravity = android.view.Gravity.CENTER
-            })
-
-            // Status
-            addView(TextView(this@FloatingOverlayService).apply {
-                id = android.R.id.text1
-                text = "Recording: 00:00"
-                setTextColor(android.graphics.Color.WHITE)
+            // Timer text
+            val timerText = TextView(this@FloatingOverlayService).apply {
+                text = "00:00"
+                setTextColor(Color.WHITE)
                 textSize = 14f
-                gravity = android.view.Gravity.CENTER
-                setPadding(0, 16, 0, 16)
-            })
-
-            // Buttons row
-            val buttonsRow = LinearLayout(this@FloatingOverlayService).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER
+                gravity = Gravity.CENTER
+                setBackgroundColor(Color.parseColor("#CC000000"))
+                setPadding(12, 6, 12, 6)
             }
 
-            // Pause/Resume button
-            buttonsRow.addView(createActionButton("⏸️") {
-                RecordingService.instance?.recorder?.let { recorder ->
-                    if (recorder.isPaused) {
-                        recorder.resumeRecording()
-                    } else {
-                        recorder.pauseRecording()
+            val timerParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = -30
+            }
+            timerText.layoutParams = timerParams
+            addView(timerText)
+
+            // Update timer
+            val timer = Timer()
+            timer.scheduleAtFixedRate(object : TimerTask() {
+                override fun run() {
+                    RecordingService.instance?.let { service ->
+                        val (_, _, duration) = service.getStatus()
+                        val seconds = (duration / 1000).toInt()
+                        val mins = seconds / 60
+                        val secs = seconds % 60
+                        post {
+                            timerText.text = String.format("%02d:%02d", mins, secs)
+                        }
                     }
                 }
-            })
+            }, 0, 1000)
 
-            // Stop button
-            buttonsRow.addView(createActionButton("⏹️") {
+            // Click to stop
+            bubble.setOnClickListener {
                 val stopIntent = Intent(this@FloatingOverlayService, RecordingService::class.java).apply {
                     action = RecordingService.ACTION_STOP
                 }
                 startService(stopIntent)
-            })
-
-            addView(buttonsRow)
-        }
-
-        windowManager?.addView(expandedView, params)
-    }
-
-    private fun createActionButton(emoji: String, onClick: () -> Unit): android.widget.Button {
-        return android.widget.Button(this).apply {
-            text = emoji
-            textSize = 20f
-            setPadding(32, 16, 32, 16)
-            setBackgroundResource(R.drawable.button_background)
-            setOnClickListener { onClick() }
-            
-            val params = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(8, 0, 8, 0)
             }
-            layoutParams = params
+
+            // Drag to move
+            var initialX = 0
+            var initialY = 0
+            var initialTouchX = 0f
+            var initialTouchY = 0f
+
+            bubble.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params?.x ?: 0
+                        initialY = params?.y ?: 0
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        params?.x = initialX + (event.rawX - initialTouchX).toInt()
+                        params?.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager?.updateViewLayout(floatingView, params)
+                        true
+                    }
+                    else -> false
+                }
+            }
         }
+
+        windowManager?.addView(floatingView, params)
     }
 
-    private fun toggleExpanded() {
-        isExpanded = !isExpanded
-        bubbleView?.visibility = if (isExpanded) android.view.View.GONE else android.view.View.VISIBLE
-        expandedView?.visibility = if (isExpanded) android.view.View.VISIBLE else android.view.View.GONE
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         super.onDestroy()
-        windowManager?.removeView(bubbleView)
-        windowManager?.removeView(expandedView)
+        instance = null
+        if (floatingView != null) {
+            windowManager?.removeView(floatingView)
+        }
     }
 }

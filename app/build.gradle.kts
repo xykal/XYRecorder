@@ -12,8 +12,8 @@ android {
         applicationId = "com.xyverse.xyrecorder"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "2.1.0"
+        versionCode = 4
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -75,6 +75,14 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    // Enable CMake for native LAME library
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.18.1"
+        }
     }
 
     // Package options for release

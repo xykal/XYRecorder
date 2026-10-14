@@ -92,7 +92,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             
             if (dir.exists()) {
                 _recordings.value = dir.listFiles()
-                    ?.filter { it.extension == "m4a" || it.extension == "wav" }
+                    ?.filter { it.extension == "mp3" }
                     ?.sortedByDescending { it.lastModified() }
                     ?: emptyList()
             }

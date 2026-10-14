@@ -208,7 +208,7 @@ private fun StatusCard(
                 StatusItem(
                     icon = Icons.Default.MusicNote,
                     label = "Format",
-                    value = "M4A",
+                    value = "MP3",
                     color = XYVerseColors.ElectricBlue
                 )
             }

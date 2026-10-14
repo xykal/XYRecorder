@@ -31,13 +31,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             while (true) {
                 kotlinx.coroutines.delay(100)
                 RecordingService.instance?.let { service ->
-                    val recorder = service.recorder
+                    val (isRecording, isPaused, duration) = service.getStatus()
                     _status.update {
                         it.copy(
-                            isRecording = recorder.isRecording,
-                            isPaused = recorder.isPaused,
-                            durationMs = recorder.durationMs,
-                            currentOutputPath = recorder.currentOutputPath
+                            isRecording = isRecording,
+                            isPaused = isPaused,
+                            durationMs = duration
                         )
                     }
                 }

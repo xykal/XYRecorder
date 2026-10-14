@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.*
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.view.*
 import android.widget.*
 import com.xyverse.xyrecorder.R

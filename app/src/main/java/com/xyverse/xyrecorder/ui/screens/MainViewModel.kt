@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xyverse.xyrecorder.XYRecorderApp
-import com.xyverse.xyrecorder.audio.AudioRecorder
 import com.xyverse.xyrecorder.data.AppSettings
 import com.xyverse.xyrecorder.data.RecordingStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +19,6 @@ import java.io.File
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     
     private val settingsRepo = (app as XYRecorderApp).settingsRepository
-    private val audioRecorder = AudioRecorder(app)
     
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
@@ -36,45 +34,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             settingsRepo.settingsFlow.collect { appSettings ->
                 _settings.value = appSettings
-                audioRecorder.updateNoiseSettings(appSettings.noiseReduction.enabled)
             }
-        }
-        
-        // Setup audio recorder callbacks
-        audioRecorder.onAudioLevelUpdate = { level ->
-            _status.update { it.copy(micLevelDb = level) }
-        }
-        
-        audioRecorder.onRecordingComplete = { file ->
-            _status.update { it.copy(
-                isRecording = false,
-                currentOutputPath = file.absolutePath
-            ) }
-            loadRecordings()
-        }
-        
-        audioRecorder.onError = { error ->
-            _status.update { it.copy(error = error) }
         }
         
         // Load existing recordings
         loadRecordings()
     }
     
-    /**
-     * Start recording
-     */
-    fun startRecording() {
-        audioRecorder.startRecording()
-        _status.update { it.copy(isRecording = true) }
+    fun updateMicLevel(level: Float) {
+        _status.update { it.copy(micLevelDb = level) }
     }
     
-    /**
-     * Stop recording
-     */
-    fun stopRecording() {
-        audioRecorder.stopRecording()
-        _status.update { it.copy(isRecording = false) }
+    fun setRecordingState(recording: Boolean) {
+        _status.update { it.copy(isRecording = recording) }
+    }
+    
+    fun onRecordingComplete(file: File) {
+        _status.update { it.copy(
+            isRecording = false,
+            currentOutputPath = file.absolutePath
+        ) }
+        loadRecordings()
+    }
+    
+    fun setError(error: String) {
+        _status.update { it.copy(error = error, isRecording = false) }
     }
     
     /**
@@ -108,7 +92,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             
             if (dir.exists()) {
                 _recordings.value = dir.listFiles()
-                    ?.filter { it.extension == "wav" }
+                    ?.filter { it.extension == "m4a" || it.extension == "wav" }
                     ?.sortedByDescending { it.lastModified() }
                     ?: emptyList()
             }

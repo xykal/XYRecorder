@@ -208,7 +208,7 @@ private fun StatusCard(
                 StatusItem(
                     icon = Icons.Default.MusicNote,
                     label = "Format",
-                    value = "WAV",
+                    value = "M4A",
                     color = XYVerseColors.ElectricBlue
                 )
             }
@@ -437,7 +437,7 @@ private fun RecordingsList(recordings: List<File>) {
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            recordings.take(3).forEach { file ->
+            recordings.take(5).forEach { file ->
                 RecordingItem(file = file)
             }
         }

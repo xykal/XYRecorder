@@ -1,4 +1,4 @@
-name: Build XYRecorder APK
+name: Build & Release XYRecorder APK
 
 on:
   push:
@@ -39,41 +39,95 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
           fi
 
-      - name: Build Debug APK
+      - name: Build Debug APK (Universal)
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Build Release APK
+      - name: Build Release APK (Universal)
         if: startsWith(github.ref, 'refs/tags/')
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/app/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Rename APK files
+        run: |
+          cd app/build/outputs/apk
+          if [ -d "debug" ]; then
+            cd debug
+            for apk in *.apk; do
+              mv "$apk" "XYRecorder-${apk%.apk}-universal.apk"
+            done
+          elif [ -d "release" ]; then
+            cd release
+            for apk in *.apk; do
+              mv "$apk" "XYRecorder-${apk%.apk}-universal.apk"
+            done
+          fi
 
       - name: Upload Debug APK
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
         uses: actions/upload-artifact@v4
         with:
-          name: XYRecorder-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: XYRecorder-debug-universal
+          path: app/build/outputs/apk/debug/*-universal.apk
           retention-days: 30
 
       - name: Upload Release APK
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: XYRecorder-release
-          path: app/build/outputs/apk/release/*.apk
+          name: XYRecorder-release-universal
+          path: app/build/outputs/apk/release/*-universal.apk
           retention-days: 90
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*-universal.apk
           generate_release_notes: true
           name: XYRecorder ${{ github.ref_name }}
+          body: |
+            ## 🎬 XYRecorder ${{ github.ref_name }}
+            
+            **Professional Android Screen Recorder with Studio-Quality Audio**
+            
+            ### 📱 Features
+            - 📹 720p/1080p/1440p/4K recording @ 30/60 FPS
+            - 🎤 Microphone + System Audio capture
+            - 🎚️ Studio-quality noise reduction chain
+            - 🎨 Beautiful Material 3 dark UI
+            - ⚙️ Full settings customization
+            
+            ### 📦 Universal APK
+            This APK supports all architectures:
+            - ✅ armeabi-v7a (32-bit ARM)
+            - ✅ arm64-v8a (64-bit ARM)
+            - ✅ x86 (32-bit Intel)
+            - ✅ x86_64 (64-bit Intel)
+            
+            ### 📲 Installation
+            1. Download the APK below
+            2. Enable "Install from unknown sources" in Android settings
+            3. Install the APK
+            4. Grant screen recording & microphone permissions
+            5. Start recording! 🎬
+            
+            ### 🎚️ Audio Processing
+            - High-pass filter (Butterworth IIR)
+            - Noise gate with envelope control
+            - Spectral noise suppression
+            - Soft-knee compressor with makeup gain
+            - De-esser for sibilance reduction
+            - Brick-wall limiter
+            - 5 one-tap presets (None/Light/Medium/Heavy/Studio)
+            
+            **Requirements:** Android 7.0+ (API 24)
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

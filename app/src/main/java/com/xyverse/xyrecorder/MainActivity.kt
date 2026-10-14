@@ -143,6 +143,7 @@ fun MainScreen(
 ) {
     val settings by viewModel.settings.collectAsState()
     val status by viewModel.status.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var currentScreen by remember { mutableStateOf(Screen.Home) }
     val hasPermissions = checkPermissions()
@@ -168,7 +169,7 @@ fun MainScreen(
                         if (onRequestOverlayPermission()) {
                             onRequestScreenCapture()
                         } else {
-                            Toast.makeText(androidx.compose.ui.platform.LocalContext.current, 
+                            Toast.makeText(context, 
                                 "Enable overlay permission for floating bubble", Toast.LENGTH_LONG).show()
                         }
                     } else {

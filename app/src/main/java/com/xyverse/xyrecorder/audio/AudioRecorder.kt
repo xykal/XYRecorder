@@ -87,6 +87,9 @@ class AudioRecorder(private val context: Context) {
                 return
             }
             
+            // Attach native effects if available
+            processor?.attachNativeEffects(audioRecord!!.audioSessionId)
+            
             // Create output file
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val outputDir = File(
@@ -148,8 +151,8 @@ class AudioRecorder(private val context: Context) {
                         processedBuffer[i] = buffer[i] / 32768.0f
                     }
                     
-                    // Process audio
-                    processor?.process(processedBuffer, readCount)
+                    // Process audio (single argument)
+                    processor?.process(processedBuffer)
                     
                     // Calculate RMS level
                     var sum = 0.0
@@ -275,5 +278,12 @@ class AudioRecorder(private val context: Context) {
      */
     fun updateNoiseSettings(enabled: Boolean) {
         processor?.setEnabled(enabled)
+    }
+    
+    /**
+     * Update processing preset
+     */
+    fun updatePreset(preset: String) {
+        processor?.setPreset(preset)
     }
 }

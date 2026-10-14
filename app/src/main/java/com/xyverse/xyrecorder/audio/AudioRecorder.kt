@@ -109,10 +109,10 @@ class AudioRecorder(private val context: Context) {
                 start()
             }
             
-            Log.d(TAG, "✅ Recording started: ${outputFile?.name}")
+            Log.d(TAG, "Recording started: ${outputFile?.name}")
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error starting recording", e)
+            Log.e(TAG, "Error starting recording", e)
             onError?.invoke("Error: ${e.message}")
             stopRecording()
         }
@@ -177,17 +177,17 @@ class AudioRecorder(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error during recording", e)
+            Log.e(TAG, "Error during recording", e)
             onError?.invoke("Recording error: ${e.message}")
         } finally {
             try {
                 outputStream.close()
                 // Update WAV header with actual size
                 updateWavHeader(outputFile!!, totalBytesWritten)
-                Log.d(TAG, "✅ Recording saved: ${outputFile?.absolutePath}")
+                Log.d(TAG, "Recording saved: ${outputFile?.absolutePath}")
                 onRecordingComplete?.invoke(outputFile!!)
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error saving file", e)
+                Log.e(TAG, "Error saving file", e)
                 onError?.invoke("Save error: ${e.message}")
             }
         }
@@ -227,19 +227,19 @@ class AudioRecorder(private val context: Context) {
     }
     
     private fun intToByteArray(value: Int): ByteArray {
-        return byteArrayOf(
-            (value and 0xff).toByte(),
-            ((value >> 8) and 0xff).toByte(),
-            ((value >> 16) and 0xff).toByte(),
-            ((value >> 24) and 0xff).toByte()
-        )
+        val bytes = ByteArray(4)
+        bytes[0] = (value and 0xff).toByte()
+        bytes[1] = ((value shr 8) and 0xff).toByte()
+        bytes[2] = ((value shr 16) and 0xff).toByte()
+        bytes[3] = ((value shr 24) and 0xff).toByte()
+        return bytes
     }
     
     private fun shortToByteArray(value: Int): ByteArray {
-        return byteArrayOf(
-            (value and 0xff).toByte(),
-            ((value >> 8) and 0xff).toByte()
-        )
+        val bytes = ByteArray(2)
+        bytes[0] = (value and 0xff).toByte()
+        bytes[1] = ((value shr 8) and 0xff).toByte()
+        return bytes
     }
     
     /**
@@ -256,14 +256,14 @@ class AudioRecorder(private val context: Context) {
             audioRecord?.release()
             processor?.release()
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error stopping recording", e)
+            Log.e(TAG, "Error stopping recording", e)
         } finally {
             audioRecord = null
             processor = null
             recordingThread = null
         }
         
-        Log.d(TAG, "⏹ Recording stopped")
+        Log.d(TAG, "Recording stopped")
     }
     
     fun isRecording(): Boolean = isRecording

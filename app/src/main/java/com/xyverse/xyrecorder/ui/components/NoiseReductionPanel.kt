@@ -367,7 +367,7 @@ private fun ExpandableProcessingCard(
                 exit = shrinkVertically()
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 0.dp, bottom = 14.dp),
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 0.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     content()

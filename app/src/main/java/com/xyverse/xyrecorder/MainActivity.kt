@@ -143,6 +143,7 @@ fun MainScreen(
 
 enum class Screen { Home, Settings, NoiseReduction }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NoiseReductionScreen(
     noiseSettings: NoiseReductionSettings,

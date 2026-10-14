@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Environment
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Surface
 import android.view.WindowManager
 import com.xyverse.xyrecorder.data.*
 import com.xyverse.xyrecorder.audio.AudioProcessor
@@ -245,7 +246,7 @@ class ScreenRecorder(private val context: Context) {
                     .setAudioFormat(AudioFormat.Builder()
                         .setSampleRate(audioSettings.sampleRate)
                         .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                        .setEncoding(AudioFormat.ENCODING.ENCODING_PCM_16BIT)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                         .build())
                     .setBufferSizeInBytes(sysBufferSize)
                     .build()

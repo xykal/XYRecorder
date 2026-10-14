@@ -17,24 +17,12 @@ import com.xyverse.xyrecorder.data.*
 import com.xyverse.xyrecorder.audio.AudioProcessor
 import kotlinx.coroutines.*
 import java.io.File
-import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.max
-import kotlin.math.min
 
 /**
- * Core screen recorder.
- *
- * Uses MediaProjection for screen capture, MediaCodec for H.264 encoding,
- * and MediaMuxer to multiplex video + audio into MP4.
- *
- * Supports:
- * - 720p/1080p/1440p/4K @ 30/60 FPS
- * - H.264 / H.265 / VP8 / VP9 codecs
- * - Microphone audio with studio-quality noise reduction
- * - System/internal audio capture (Android 10+)
+ * Core screen recorder with MP4 output.
  */
 class ScreenRecorder(private val context: Context) {
 
@@ -43,7 +31,6 @@ class ScreenRecorder(private val context: Context) {
         private const val TIMEOUT_US = 10_000L
     }
 
-    // State
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var videoEncoder: MediaCodec? = null
@@ -52,22 +39,17 @@ class ScreenRecorder(private val context: Context) {
     private var videoInputSurface: Surface? = null
     private var audioProcessor: AudioProcessor? = null
 
-    // Audio capture
     private var micAudioRecord: AudioRecord? = null
     private var systemAudioRecord: AudioRecord? = null
     private var micRecordingThread: Thread? = null
-    private var systemRecordingThread: Thread? = null
 
-    // Muxer track indices
     private var videoTrackIndex = -1
     private var audioTrackIndex = -1
     private var muxerStarted = false
 
-    // Buffers
     private val bufferInfo = MediaCodec.BufferInfo()
     private var audioBufferInfo = MediaCodec.BufferInfo()
 
-    // Recording state
     @Volatile
     var isRecording = false
         private set
@@ -82,43 +64,18 @@ class ScreenRecorder(private val context: Context) {
     var currentOutputPath: String? = null
         private set
 
-    var micLevelDb: Float = -96f
-        private set
-
-    var processedLevelDb: Float = -96f
-        private set
-
-    // Coroutine scope
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    // Callbacks
+    
     var onDurationUpdate: ((Long) -> Unit)? = null
-    var onLevelsUpdate: ((Float, Float) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     var onComplete: ((String) -> Unit)? = null
 
-    /**
-     * Start recording.
-     *
-     * @param resultCode  resultCode from MediaProjection permission dialog
-     * @param data        Intent from MediaProjection permission dialog
-     * @param videoSettings Video recording settings
-     * @param audioSettings Audio settings
-     * @param nrSettings  Noise reduction settings
-     */
-    fun startRecording(
-        resultCode: Int,
-        data: Intent,
-        videoSettings: VideoSettings,
-        audioSettings: AudioSettings,
-        nrSettings: NoiseReductionSettings
-    ) {
+    fun startRecording(resultCode: Int, data: Intent) {
         if (isRecording) return
 
         try {
             // Get MediaProjection
-            val projectionManager =
-                context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, data)
 
             mediaProjection?.registerCallback(object : MediaProjection.Callback() {
@@ -128,19 +85,19 @@ class ScreenRecorder(private val context: Context) {
                 }
             }, null)
 
-            // Prepare output file
+            // Prepare output file (MP4 format)
             val outputDir = getOutputDirectory()
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val outputFile = File(outputDir, "XYRec_$timestamp.mp4")
             currentOutputPath = outputFile.absolutePath
 
-            // Setup video encoder
-            setupVideoEncoder(videoSettings, mediaProjection!!)
+            // Setup video encoder (H.264 for best compatibility)
+            setupVideoEncoder()
 
-            // Setup audio encoder
-            setupAudioEncoder(audioSettings, nrSettings)
+            // Setup audio encoder (AAC)
+            setupAudioEncoder()
 
-            // Setup muxer
+            // Setup muxer (MP4)
             muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             videoTrackIndex = -1
             audioTrackIndex = -1
@@ -152,8 +109,8 @@ class ScreenRecorder(private val context: Context) {
 
             virtualDisplay = mediaProjection!!.createVirtualDisplay(
                 "XYRecorder",
-                videoSettings.resolution.width,
-                videoSettings.resolution.height,
+                1280, // 720p width
+                720,  // 720p height
                 density,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 videoInputSurface,
@@ -177,92 +134,52 @@ class ScreenRecorder(private val context: Context) {
         }
     }
 
-    private fun setupVideoEncoder(settings: VideoSettings, projection: MediaProjection) {
-        val format = MediaFormat.createVideoFormat(settings.codec.mimeType, settings.resolution.width, settings.resolution.height)
+    private fun setupVideoEncoder() {
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1280, 720)
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
             android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-        format.setInteger(MediaFormat.KEY_BIT_RATE, settings.bitrate)
-        format.setInteger(MediaFormat.KEY_FRAME_RATE, settings.fps)
+        format.setInteger(MediaFormat.KEY_BIT_RATE, 5_000_000) // 5 Mbps
+        format.setInteger(MediaFormat.KEY_FRAME_RATE, 30)
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
 
-        // Try to enable hardware acceleration
-        try {
-            format.setInteger(MediaFormat.KEY_PROFILE,
-                if (settings.codec == VideoCodec.H265)
-                    android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain
-                else
-                    android.media.MediaCodecInfo.CodecProfileLevel.AVCProfileHigh)
-            format.setInteger(MediaFormat.KEY_LEVEL,
-                if (settings.codec == VideoCodec.H265)
-                    android.media.MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel51
-                else
-                    android.media.MediaCodecInfo.CodecProfileLevel.AVCLevel52)
-        } catch (_: Exception) {}
-
-        videoEncoder = MediaCodec.createEncoderByType(settings.codec.mimeType)
+        videoEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         videoEncoder!!.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         videoInputSurface = videoEncoder!!.createInputSurface()
         videoEncoder!!.start()
     }
 
-    private fun setupAudioEncoder(audioSettings: AudioSettings, nrSettings: NoiseReductionSettings) {
+    private fun setupAudioEncoder() {
         // Create AudioProcessor for mic
-        audioProcessor = AudioProcessor(nrSettings)
+        audioProcessor = AudioProcessor(NoiseReductionSettings())
 
         // Mic AudioRecord
-        if (audioSettings.microphoneEnabled) {
-            val micBufferSize = AudioRecord.getMinBufferSize(
-                audioSettings.sampleRate,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-            ) * 2
+        val micBufferSize = AudioRecord.getMinBufferSize(
+            48000,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        ) * 2
 
-            micAudioRecord = AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.MIC)
-                .setAudioFormat(AudioFormat.Builder()
-                    .setSampleRate(audioSettings.sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .build())
-                .setBufferSizeInBytes(micBufferSize)
-                .build()
+        micAudioRecord = AudioRecord.Builder()
+            .setAudioSource(MediaRecorder.AudioSource.MIC)
+            .setAudioFormat(AudioFormat.Builder()
+                .setSampleRate(48000)
+                .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .build())
+            .setBufferSizeInBytes(micBufferSize)
+            .build()
 
-            // Attach native noise suppression
-            audioProcessor?.attachNativeEffects(micAudioRecord!!.audioSessionId)
-            micAudioRecord?.startRecording()
-        }
-
-        // System audio (Android 10+)
-        if (audioSettings.systemAudioEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
-                val sysBufferSize = AudioRecord.getMinBufferSize(
-                    audioSettings.sampleRate,
-                    AudioFormat.CHANNEL_OUT_STEREO,
-                    AudioFormat.ENCODING_PCM_16BIT
-                ) * 2
-
-                systemAudioRecord = AudioRecord.Builder()
-                    .setAudioSource(MediaRecorder.AudioSource.REMOTE_SUBMIX)
-                    .setAudioFormat(AudioFormat.Builder()
-                        .setSampleRate(audioSettings.sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .build())
-                    .setBufferSizeInBytes(sysBufferSize)
-                    .build()
-                systemAudioRecord?.startRecording()
-            } catch (e: Exception) {
-                Log.w(TAG, "System audio not available: ${e.message}")
-            }
-        }
+        // Attach native noise suppression
+        audioProcessor?.attachNativeEffects(micAudioRecord!!.audioSessionId)
+        micAudioRecord?.startRecording()
 
         // Audio encoder (AAC)
         val audioFormat = MediaFormat.createAudioFormat(
             MediaFormat.MIMETYPE_AUDIO_AAC,
-            audioSettings.sampleRate,
-            if (systemAudioRecord != null) 2 else 1
+            48000,
+            1 // mono
         )
-        audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, audioSettings.outputBitrate)
+        audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
         audioFormat.setInteger(MediaFormat.KEY_AAC_PROFILE,
             MediaCodecInfo.CodecProfileLevel.AACObjectLC)
         audioFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 8192)
@@ -271,12 +188,11 @@ class ScreenRecorder(private val context: Context) {
         audioEncoder!!.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         audioEncoder!!.start()
 
-        // Start capture threads
-        startMicCaptureThread(audioSettings)
-        startSystemAudioCaptureThread(audioSettings)
+        // Start capture thread
+        startMicCaptureThread()
     }
 
-    private fun startMicCaptureThread(settings: AudioSettings) {
+    private fun startMicCaptureThread() {
         val record = micAudioRecord ?: return
         val processor = audioProcessor ?: return
         val encoder = audioEncoder ?: return
@@ -293,16 +209,6 @@ class ScreenRecorder(private val context: Context) {
                     // Convert & process through the studio-quality chain
                     processor.processPcm16(shortBuffer, floatBuffer)
 
-                    // Apply volume
-                    val vol = settings.microphoneVolume
-                    if (vol != 1f) {
-                        for (i in 0 until read) floatBuffer[i] *= vol
-                    }
-
-                    // Compute level
-                    micLevelDb = processor.computeRmsDb(floatBuffer)
-                    onLevelsUpdate?.invoke(micLevelDb, processedLevelDb)
-
                     // Convert back to PCM16 and feed to encoder
                     val pcmBuffer = ShortArray(read)
                     processor.floatToPcm16(floatBuffer, pcmBuffer, read)
@@ -318,37 +224,6 @@ class ScreenRecorder(private val context: Context) {
         }
     }
 
-    private fun startSystemAudioCaptureThread(settings: AudioSettings) {
-        val record = systemAudioRecord ?: return
-        val encoder = audioEncoder ?: return
-
-        val bufferSize = record.bufferSizeInFrames * 4
-        val shortBuffer = ShortArray(bufferSize / 2)
-
-        systemRecordingThread = Thread {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
-            while (isRecording) {
-                val read = record.read(shortBuffer, 0, shortBuffer.size)
-                if (read > 0 && !isPaused) {
-                    // Apply volume
-                    val vol = settings.systemAudioVolume
-                    if (vol != 1f) {
-                        for (i in 0 until read) {
-                            shortBuffer[i] = (shortBuffer[i] * vol).toInt().toShort()
-                        }
-                    }
-
-                    // Feed directly (system audio doesn't need noise reduction)
-                    writeAudioToEncoder(shortBuffer, read * 2)
-                }
-            }
-        }.apply {
-            name = "XYRecorder-SysThread"
-            isDaemon = true
-            start()
-        }
-    }
-
     @Synchronized
     private fun writeAudioToEncoder(pcmData: ShortArray, dataSize: Int) {
         val encoder = audioEncoder ?: return
@@ -357,7 +232,6 @@ class ScreenRecorder(private val context: Context) {
             if (inputBufferIndex >= 0) {
                 val inputBuffer = encoder.getInputBuffer(inputBufferIndex) ?: return
                 inputBuffer.clear()
-                // Convert short[] to ByteBuffer
                 val bb = ByteBuffer.allocate(dataSize)
                 for (i in 0 until dataSize / 2) {
                     bb.putShort(pcmData[i])
@@ -379,7 +253,7 @@ class ScreenRecorder(private val context: Context) {
                 } catch (e: Exception) {
                     Log.e(TAG, "Video encoding error", e)
                 }
-                delay(1) // ~60fps polling
+                delay(1)
             }
         }
     }
@@ -500,11 +374,6 @@ class ScreenRecorder(private val context: Context) {
     fun pauseRecording() {
         if (!isRecording || isPaused) return
         isPaused = true
-        virtualDisplay?.let {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                // Pause by releasing the surface temporarily
-            }
-        }
     }
 
     fun resumeRecording() {
@@ -518,11 +387,9 @@ class ScreenRecorder(private val context: Context) {
 
         scope.launch {
             try {
-                // Send EOS to encoders
                 videoEncoder?.signalEndOfInputStream()
                 delay(500)
 
-                // Release in order
                 virtualDisplay?.release()
                 videoEncoder?.stop()
                 videoEncoder?.release()
@@ -536,8 +403,6 @@ class ScreenRecorder(private val context: Context) {
 
                 micAudioRecord?.stop()
                 micAudioRecord?.release()
-                systemAudioRecord?.stop()
-                systemAudioRecord?.release()
 
                 mediaProjection?.stop()
                 audioProcessor?.release()
@@ -567,8 +432,6 @@ class ScreenRecorder(private val context: Context) {
             muxer?.release()
             micAudioRecord?.stop()
             micAudioRecord?.release()
-            systemAudioRecord?.stop()
-            systemAudioRecord?.release()
             mediaProjection?.stop()
             audioProcessor?.release()
         } catch (e: Exception) {
@@ -582,7 +445,6 @@ class ScreenRecorder(private val context: Context) {
         mediaProjection = null
         videoInputSurface = null
         micAudioRecord = null
-        systemAudioRecord = null
         audioProcessor = null
         videoTrackIndex = -1
         audioTrackIndex = -1

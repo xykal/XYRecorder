@@ -5,8 +5,11 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,12 +22,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xyverse.xyrecorder.data.NoiseReductionPreset
 import com.xyverse.xyrecorder.data.NoiseReductionSettings
+import com.xyverse.xyrecorder.service.RecordingService
 import com.xyverse.xyrecorder.ui.components.NoiseReductionPanel
 import com.xyverse.xyrecorder.ui.screens.*
 import com.xyverse.xyrecorder.ui.theme.XYRecorderTheme
@@ -32,22 +35,25 @@ import com.xyverse.xyrecorder.ui.theme.XYRecorderTheme
 class MainActivity : ComponentActivity() {
 
     private lateinit var projectionManager: MediaProjectionManager
-    private var pendingProjectionData: Intent? = null
-    private var pendingResultCode: Int = -1
 
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            pendingResultCode = result.resultCode
-            pendingProjectionData = result.data
+            // Start the recording service with the projection data
+            startRecordingService(result.resultCode, result.data!!)
+        } else {
+            Toast.makeText(this, "Screen recording permission denied", Toast.LENGTH_SHORT).show()
         }
     }
 
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
-        // Permissions updated — recomposition will pick up the change
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (!allGranted) {
+            Toast.makeText(this, "Audio permission required for recording", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,10 +79,39 @@ class MainActivity : ComponentActivity() {
                         ContextCompat.checkSelfPermission(
                             this, Manifest.permission.RECORD_AUDIO
                         ) == PackageManager.PERMISSION_GRANTED
+                    },
+                    onCheckOverlayPermission = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                            startActivity(intent)
+                            Toast.makeText(this, "Enable overlay permission for floating bubble", Toast.LENGTH_LONG).show()
+                            false
+                        } else {
+                            true
+                        }
                     }
                 )
             }
         }
+    }
+
+    private fun startRecordingService(resultCode: Int, data: Intent) {
+        val serviceIntent = Intent(this, RecordingService::class.java).apply {
+            action = RecordingService.ACTION_START
+            putExtra(RecordingService.EXTRA_RESULT_CODE, resultCode)
+            putExtra(RecordingService.EXTRA_RESULT_DATA, data)
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        
+        Toast.makeText(this, "Recording started!", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -85,6 +120,7 @@ fun MainScreen(
     onRequestScreenCapture: () -> Unit,
     onRequestPermissions: () -> Unit,
     checkPermissions: () -> Boolean,
+    onCheckOverlayPermission: () -> Boolean,
     viewModel: MainViewModel = viewModel()
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -110,8 +146,14 @@ fun MainScreen(
                 status = status,
                 canStart = hasPermissions,
                 onStartRecording = {
-                    if (hasPermissions) onRequestScreenCapture()
-                    else onRequestPermissions()
+                    if (hasPermissions) {
+                        // Check overlay permission for floating bubble
+                        if (onCheckOverlayPermission()) {
+                            onRequestScreenCapture()
+                        }
+                    } else {
+                        onRequestPermissions()
+                    }
                 },
                 onStopRecording = viewModel::stopRecording,
                 onPauseRecording = viewModel::pauseRecording,

@@ -11,7 +11,7 @@ import com.xyverse.xyrecorder.R
 import com.xyverse.xyrecorder.recorder.ScreenRecorder
 
 /**
- * Foreground service that keeps the recording alive even when the app is backgrounded.
+ * Foreground service that keeps the recording alive.
  */
 class RecordingService : Service() {
 
@@ -31,7 +31,8 @@ class RecordingService : Service() {
             private set
     }
 
-    private lateinit var recorder: ScreenRecorder
+    lateinit var recorder: ScreenRecorder
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -51,36 +52,38 @@ class RecordingService : Service() {
                     intent.getParcelableExtra(EXTRA_RESULT_DATA)
                 }
 
-                if (data != null) {
-                    startForeground(NOTIFICATION_ID, buildNotification("Recording...", isRecording = true))
-
-                    // Recorder settings come from MainActivity via shared preferences / direct call
-                    // For simplicity we start here with default settings
-                    // In production, pass settings via intent extras or DataStore
-                    recorder.startRecording(
-                        resultCode = resultCode,
-                        data = data,
-                        videoSettings = com.xyverse.xyrecorder.data.VideoSettings(),
-                        audioSettings = com.xyverse.xyrecorder.data.AudioSettings(),
-                        nrSettings = com.xyverse.xyrecorder.data.NoiseReductionSettings()
-                    )
+                if (resultCode != -1 && data != null) {
+                    startForeground(NOTIFICATION_ID, buildNotification("Recording...", true))
+                    recorder.startRecording(resultCode, data)
+                    
+                    // Start floating overlay
+                    val overlayIntent = Intent(this, FloatingOverlayService::class.java)
+                    startService(overlayIntent)
+                } else {
+                    stopSelf()
                 }
             }
             ACTION_STOP -> {
                 recorder.stopRecording()
+                stopOverlay()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             ACTION_PAUSE -> {
                 recorder.pauseRecording()
-                updateNotification("Recording paused", isRecording = false)
+                updateNotification("Recording paused", false)
             }
             ACTION_RESUME -> {
                 recorder.resumeRecording()
-                updateNotification("Recording...", isRecording = true)
+                updateNotification("Recording...", true)
             }
         }
         return START_STICKY
+    }
+
+    private fun stopOverlay() {
+        val overlayIntent = Intent(this, FloatingOverlayService::class.java)
+        stopService(overlayIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -90,8 +93,6 @@ class RecordingService : Service() {
         instance = null
         recorder.stopRecording()
     }
-
-    fun getRecorder(): ScreenRecorder = recorder
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -109,33 +110,32 @@ class RecordingService : Service() {
     }
 
     private fun buildNotification(text: String, isRecording: Boolean): Notification {
-        val pendingIntent: PendingIntent = Intent(this, MainActivity::class.java).let { intent ->
+        val openIntent = Intent(this, MainActivity::class.java).let { intent ->
             PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
         }
 
-        val stopIntent: PendingIntent = Intent(this, RecordingService::class.java).apply {
+        val stopIntent = Intent(this, RecordingService::class.java).apply {
             action = ACTION_STOP
         }.let { intent ->
             PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_IMMUTABLE)
         }
 
-        val pauseIntent: PendingIntent = Intent(this, RecordingService::class.java).apply {
+        val pauseIntent = Intent(this, RecordingService::class.java).apply {
             action = if (isRecording) ACTION_PAUSE else ACTION_RESUME
         }.let { intent ->
             PendingIntent.getService(this, 2, intent, PendingIntent.FLAG_IMMUTABLE)
         }
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("XYRecorder")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setContentIntent(pendingIntent)
+            .setSmallIcon(R.drawable.ic_recording)
+            .setContentIntent(openIntent)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(android.R.drawable.ic_media_pause, if (isRecording) "Pause" else "Resume", pauseIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent)
-
-        return builder.build()
+            .build()
     }
 
     private fun updateNotification(text: String, isRecording: Boolean) {

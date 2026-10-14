@@ -47,16 +47,17 @@ class RecordingService : Service() {
     private var isRecording = false
     private var isPaused = false
     private var startTime = 0L
+    private var outputFile: String? = null
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         createNotificationChannel()
-        Log.d(TAG, "RecordingService created")
+        Log.d(TAG, "✅ RecordingService created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand: ${intent?.action}")
+        Log.d(TAG, "📱 onStartCommand: ${intent?.action}")
         
         when (intent?.action) {
             ACTION_START -> {
@@ -68,21 +69,23 @@ class RecordingService : Service() {
                     intent.getParcelableExtra(EXTRA_RESULT_DATA)
                 }
 
-                Log.d(TAG, "Starting recording with resultCode=$resultCode, data=$data")
+                Log.d(TAG, "🎬 Starting recording: resultCode=$resultCode, data=${data != null}")
 
                 if (resultCode != -1 && data != null) {
-                    startForegroundRecording(resultCode, data)
+                    startRecordingInternal(resultCode, data)
                 } else {
-                    Log.e(TAG, "Invalid resultCode or data")
+                    Log.e(TAG, "❌ Invalid resultCode or data")
                     stopSelf()
                 }
             }
             ACTION_STOP -> {
-                stopRecording()
+                Log.d(TAG, "⏹ Stopping recording")
+                stopRecordingInternal()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             ACTION_PAUSE -> {
+                Log.d(TAG, "⏸ Pausing recording")
                 isPaused = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     mediaRecorder?.pause()
@@ -90,6 +93,7 @@ class RecordingService : Service() {
                 updateNotification("⏸️ Recording paused", false)
             }
             ACTION_RESUME -> {
+                Log.d(TAG, "▶ Resuming recording")
                 isPaused = false
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     mediaRecorder?.resume()
@@ -100,39 +104,58 @@ class RecordingService : Service() {
         return START_STICKY
     }
 
-    private fun startForegroundRecording(resultCode: Int, data: Intent) {
+    private fun startRecordingInternal(resultCode: Int, data: Intent) {
         try {
-            // Get MediaProjection
+            Log.d(TAG, "🔧 Setting up MediaProjection...")
+            
+            // Step 1: Get MediaProjection
             val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, data)
             
             if (mediaProjection == null) {
-                Log.e(TAG, "Failed to get MediaProjection")
+                Log.e(TAG, "❌ MediaProjection is null!")
                 stopSelf()
                 return
             }
 
-            Log.d(TAG, "MediaProjection obtained")
+            Log.d(TAG, "✅ MediaProjection obtained")
 
-            // Start foreground service
+            // Step 2: Start foreground FIRST
+            Log.d(TAG, "🔧 Starting foreground service...")
             startForeground(NOTIFICATION_ID, buildNotification("🎬 Recording started...", true))
 
-            // Setup MediaRecorder
-            setupMediaRecorder()
+            // Step 3: Create output file
+            val outputDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "XYRecorder")
+            if (!outputDir.exists()) {
+                outputDir.mkdirs()
+                Log.d(TAG, "📁 Created directory: ${outputDir.absolutePath}")
+            }
             
-            // Create VirtualDisplay
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val file = File(outputDir, "XYRec_$timestamp.mp4")
+            outputFile = file.absolutePath
+            Log.d(TAG, "📁 Output file: ${file.absolutePath}")
+
+            // Step 4: Setup MediaRecorder
+            Log.d(TAG, "🔧 Setting up MediaRecorder...")
+            setupMediaRecorder(file.absolutePath)
+            
+            // Step 5: Create VirtualDisplay
+            Log.d(TAG, "🔧 Setting up VirtualDisplay...")
             setupVirtualDisplay()
             
-            // Start recording
+            // Step 6: Start recording
+            Log.d(TAG, "▶ Starting MediaRecorder...")
             mediaRecorder?.start()
             
             isRecording = true
             isPaused = false
             startTime = System.currentTimeMillis()
             
-            Log.d(TAG, "Recording started successfully")
+            Log.d(TAG, "✅ Recording started successfully!")
 
-            // Start floating overlay
+            // Step 7: Start floating overlay
+            Log.d(TAG, "🫧 Starting floating overlay...")
             try {
                 val overlayIntent = Intent(this, FloatingOverlayService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -140,26 +163,19 @@ class RecordingService : Service() {
                 } else {
                     startService(overlayIntent)
                 }
-                Log.d(TAG, "Floating overlay started")
+                Log.d(TAG, "✅ Floating overlay started")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start floating overlay", e)
+                Log.e(TAG, "⚠️ Failed to start floating overlay", e)
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting recording", e)
+            Log.e(TAG, "❌ Error starting recording", e)
+            e.printStackTrace()
             stopSelf()
         }
     }
 
-    private fun setupMediaRecorder() {
-        val outputDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "XYRecorder")
-        if (!outputDir.exists()) outputDir.mkdirs()
-        
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val outputFile = File(outputDir, "XYRec_$timestamp.mp4")
-        
-        Log.d(TAG, "Output file: ${outputFile.absolutePath}")
-
+    private fun setupMediaRecorder(outputPath: String) {
         mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             MediaRecorder(this)
         } else {
@@ -171,26 +187,35 @@ class RecordingService : Service() {
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setVideoEncoder(MediaRecorder.VideoEncoder.H264)
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setVideoEncodingProfileLevel(
-                android.media.MediaCodecInfo.CodecProfileLevel.AVCProfileHigh,
-                android.media.MediaCodecInfo.CodecProfileLevel.AVCLevel52
-            )
-            setVideoSize(1280, 720) // 720p
+            setVideoSize(1280, 720)
             setVideoFrameRate(30)
-            setVideoEncodingBitRate(5_000_000) // 5 Mbps
-            setAudioSamplingRate(48000)
-            setAudioEncodingBitRate(192_000)
-            setOutputFile(outputFile.absolutePath)
+            setVideoEncodingBitRate(5_000_000)
+            setAudioSamplingRate(44100)
+            setAudioEncodingBitRate(128_000)
+            setOutputFile(outputPath)
+            
+            Log.d(TAG, "🔧 Preparing MediaRecorder...")
             prepare()
+            Log.d(TAG, "✅ MediaRecorder prepared")
         }
     }
 
     private fun setupVirtualDisplay() {
         val metrics = DisplayMetrics()
         val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        
+        @Suppress("DEPRECATION")
         windowManager.defaultDisplay.getRealMetrics(metrics)
         
         val density = metrics.densityDpi
+        
+        val surface = mediaRecorder?.surface
+        if (surface == null) {
+            Log.e(TAG, "❌ MediaRecorder surface is null!")
+            return
+        }
+        
+        Log.d(TAG, "🔧 Creating VirtualDisplay: 1280x720, density=$density")
         
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "XYRecorder",
@@ -198,16 +223,20 @@ class RecordingService : Service() {
             720,
             density,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            mediaRecorder?.surface,
+            surface,
             null,
             null
         )
         
-        Log.d(TAG, "VirtualDisplay created: ${virtualDisplay?.display}")
+        if (virtualDisplay == null) {
+            Log.e(TAG, "❌ VirtualDisplay is null!")
+        } else {
+            Log.d(TAG, "✅ VirtualDisplay created: ${virtualDisplay?.display}")
+        }
     }
 
-    private fun stopRecording() {
-        Log.d(TAG, "Stopping recording")
+    private fun stopRecordingInternal() {
+        Log.d(TAG, "🔧 Stopping recording...")
         
         try {
             isRecording = false
@@ -229,13 +258,15 @@ class RecordingService : Service() {
             // Stop overlay
             try {
                 stopService(Intent(this, FloatingOverlayService::class.java))
+                Log.d(TAG, "✅ Overlay stopped")
             } catch (e: Exception) {
-                Log.e(TAG, "Error stopping overlay", e)
+                Log.e(TAG, "⚠️ Error stopping overlay", e)
             }
             
-            Log.d(TAG, "Recording stopped successfully")
+            Log.d(TAG, "✅ Recording stopped: $outputFile")
         } catch (e: Exception) {
-            Log.e(TAG, "Error in stopRecording", e)
+            Log.e(TAG, "❌ Error in stopRecording", e)
+            e.printStackTrace()
         }
     }
 
@@ -253,7 +284,10 @@ class RecordingService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         instance = null
-        stopRecording()
+        Log.d(TAG, "🗑️ RecordingService destroyed")
+        if (isRecording) {
+            stopRecordingInternal()
+        }
     }
 
     private fun createNotificationChannel() {
@@ -268,6 +302,7 @@ class RecordingService : Service() {
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
+            Log.d(TAG, "✅ Notification channel created")
         }
     }
 

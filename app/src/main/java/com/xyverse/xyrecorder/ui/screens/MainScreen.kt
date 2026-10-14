@@ -206,7 +206,7 @@ private fun StatusCard(
                 )
                 
                 StatusItem(
-                    icon = Icons.Default.FormatAudioDescription,
+                    icon = Icons.Default.MusicNote,
                     label = "Format",
                     value = "WAV",
                     color = XYVerseColors.ElectricBlue
@@ -343,7 +343,7 @@ private fun RecordingButton(
         initialValue = 1f,
         targetValue = if (isRecording) 1.1f else 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = EaseInOutSine),
+            animation = tween(800),
             repeatMode = RepeatMode.Reverse
         ),
         label = "scale"

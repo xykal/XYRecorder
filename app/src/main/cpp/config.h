@@ -57,6 +57,10 @@
 /* Define if you have the IEEE Math Library */
 #define HAVE_IEEEFP 1
 
+/* IEEE 754 types for Android/Bionic */
+typedef float ieee754_float32_t;
+typedef double ieee754_float64_t;
+
 /* Define if your compiler implements the inline keyword */
 #define inline __inline__
 
